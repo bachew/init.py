@@ -9,6 +9,9 @@ import sys
 
 
 class main(object):
+    HELP_URL = 'https://github.com/bachew/init.py'
+    SCRIPT_URL = 'https://github.com/bachew/init.py/blob/master/init.py'
+
     def __init__(self, argv):
         self.script = argv[0]
         options, self.command = self.split_args(argv[1:])
@@ -33,9 +36,13 @@ class main(object):
             self.run(self.command, exit=True)
 
     def split_args(self, args):
-        for (i, arg) in enumerate(args):
-            if not args[i].startswith('-'):
+        i = 0
+
+        for arg in args:
+            if not arg.startswith('-'):
                 break
+
+            i += 1
 
         return args[:i], args[i:]
 
@@ -49,13 +56,16 @@ class main(object):
             - run 'inv init'
             - run the provided command
 
+            See {help_url} for more info
+
             Arguments:
               command     Command to execute after initialization
 
             Options:
               -h, --help  Show this help message and exit
               --upgrade   Upgrade {init_py} to the latest version
-        '''.format(init_py=__file__)
+                          ({script_url})
+        '''.format(help_url=self.HELP_URL, init_py=__file__, script_url=self.SCRIPT_URL)
         print(dedent(details))
 
     def print_usage(self):
@@ -95,7 +105,7 @@ class main(object):
             self.error('Python version not OK')
 
     def upgrade(self):
-        print('TODO: upgrade {!r}'.format(__file__))
+        print('TODO: upgrade {!r} from {!r}'.format(__file__, self.SCRIPT_URL))
 
     def initialize(self):
         print('TODO: initialize')
