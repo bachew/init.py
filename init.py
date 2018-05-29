@@ -9,6 +9,7 @@ import sys
 
 
 class main(object):
+    VERSION = '0.0.1'
     HELP_URL = 'https://github.com/bachew/init.py'
     SCRIPT_URL = 'https://github.com/bachew/init.py/blob/master/init.py'
 
@@ -50,13 +51,12 @@ class main(object):
         self.print_usage()
 
         details = '''
-            Initialize this project by:
-            - running pipenv
-            - add and install required dependencies
+            init.py v{version} ({help_url})
+
+            Initialize project by:
+            - create or update virtual env
             - run 'inv init'
             - run the provided command
-
-            See {help_url} for more info
 
             Arguments:
               command     Command to execute after initialization
@@ -65,7 +65,10 @@ class main(object):
               -h, --help  Show this help message and exit
               --upgrade   Upgrade {init_py} to the latest version
                           ({script_url})
-        '''.format(help_url=self.HELP_URL, init_py=__file__, script_url=self.SCRIPT_URL)
+        '''.format(version=self.VERSION,
+                   help_url=self.HELP_URL,
+                   init_py=__file__,
+                   script_url=self.SCRIPT_URL)
         print(dedent(details))
 
     def print_usage(self):
@@ -80,7 +83,7 @@ class main(object):
             print('Config file {!r} does not exist, creating it'.format(self.config_path))
 
             with open(self.config_path, 'w') as f:
-                f.write(dedent('''
+                f.write(dedent('''\
                     def check_python_version(version):
                         return version >= (3, 4)
                     '''))
@@ -101,8 +104,10 @@ class main(object):
         ok = check(version)
         print('>>> {!r}'.format(ok))
 
-        if not ok:
-            self.error('Python version not OK')
+        if ok:
+            print('Python version OK')
+        else:
+            self.error('Python version not OK, see {!r}'.format(self.config_path))
 
     def upgrade(self):
         print('TODO: upgrade {!r} from {!r}'.format(__file__, self.SCRIPT_URL))
