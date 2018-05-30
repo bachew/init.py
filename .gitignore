@@ -4,3 +4,7 @@ __pycache__
 /init_config.py
 /Pipfile
 /Pipfile.lock
+/invoke.py
+/tasks.py
+
+/*.sublime-*
