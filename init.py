@@ -15,6 +15,7 @@ import sys
 VERSION = '0.0.1'
 HELP_URL = 'https://github.com/bachew/init.py'
 SCRIPT_URL = 'https://github.com/bachew/init.py/blob/master/init.py'
+CONFIG_FILE = 'init_config.py'
 
 
 class InitError(Exception):
@@ -48,7 +49,6 @@ class main(object):
     def __init__(self, argv):
         self.script = argv[0]
         options, self.command = self.split_args(argv[1:])
-        self.command_str = list2cmdline(self.command)
 
         if set(['-h', '--help']).intersection(options):
             self.print_help()
@@ -56,21 +56,20 @@ class main(object):
 
         self.base_dir = osp.abspath(osp.dirname(__file__))
         self.config_path = osp.join(self.base_dir, 'init_config.py')
-        self.config_module = osp.splitext(self.config_path)[0]
-        self.config = self.load_config()
+
+        ensure_file(self.config_path, dedent('''\
+            def check_python_version(version):
+                return version >= (2, 7)
+            '''))
+        self.config = runpy.run_path(self.config_path)
+
         self.check_python_version()
 
         if '--upgrade' in options:
             self.upgrade()
 
-        # TODO: cd is quite confusing, maybe force user to cd manually
         with change_dir(self.base_dir):
-            # TODO: consider setting PIPENV_VENV_IN_PROJECT=true for pipenv commands
             self.initialize()
-
-            if self.command:
-                status = run(['pipenv', 'run'] + self.command, raise_error=False)
-                raise SystemExit(status)
 
     def split_args(self, args):
         i = 0
@@ -90,7 +89,7 @@ class main(object):
             init.py v{version} ({help_url})
 
             Initialize project by:
-            - create or update virtual env
+            - create or update virtualenv
             - run 'inv init'
             - run the provided command
 
@@ -110,12 +109,9 @@ class main(object):
     def print_usage(self):
         print('Usage: {} [-h/--help] [--upgrade] [command]'.format(self.script))
 
-    def load_config(self):
-        ensure_file(self.config_path, dedent('''\
-            def check_python_version(version):
-                return version >= (2, 7)
-            '''))
-        return runpy.run_path(self.config_path)
+    @property
+    def config_module(self):
+        return osp.splitext(osp.basename(self.config_path))[0]
 
     def check_python_version(self):
         key = 'check_python_version'
@@ -146,8 +142,24 @@ class main(object):
             verify_ssl = true
             name = "pypi"
             '''))
-        run(['pipenv', 'install'])
-        run(['pipenv', 'install', 'invoke>=1.0.0'])
+
+        # Running 'python -m pipenv install' creates virtualenv using the
+        # same interpreter. But if the virtualenv already exists and it has
+        # different python version, virtualenv won't be recreated
+        self.pipenv(['install'])
+
+        venv_py_version = self.get_venv_py_version()
+
+        if venv_py_version != sys.version:
+            # TODO: more friendly message
+            print(('Recreating virtualenv because its Python version {!r}'
+                   ' is different from current Python version {!r}').format(
+                venv_py_version, sys.version))
+            # Providing --python option forces virtualenv to be recreated
+            self.pipenv(['--python', sys.executable, 'run', 'python', '-c', ''],
+                        print_command=False)
+
+        self.pipenv(['install', 'invoke>=1.0.0'])
 
         ensure_file('invoke.py', dedent('''\
             debug = True
@@ -163,15 +175,39 @@ class main(object):
             def init(ctx):
                 ctx.run('echo tasks.py says hi')
             '''))
-        run(['pipenv', 'run', 'inv', 'init'])
+
+        self.pipenv(['run', 'inv', 'init'])
+
+        if self.command:
+            status = self.pipenv(['run'] + self.command, raise_error=False)
+            raise SystemExit(status)
+
+    def pipenv(self, args, **kwargs):
+        try:
+            import pipenv  # noqa
+        except ImportError:
+            raise InitError('pipenv not installed')  # TODO: be helpful
+
+        return run([sys.executable, '-m', 'pipenv'] + args, **kwargs)
+
+    def get_venv_py_version(self):
+        cmd = [
+            sys.executable, '-m',
+            'pipenv', 'run',
+            'python', '-c',
+            'import sys; sys.stdout.write(str(sys.version))'
+        ]
+        output = subprocess.check_output(cmd)
+        return output.decode(sys.stdout.encoding)
 
 
 def print_error(message):
     print('ERROR:', message, file=sys.stderr)
 
 
-def run(cmd, raise_error=True):
-    print('$ {}'.format(list2cmdline(cmd)))
+def run(cmd, print_command=True, raise_error=True, **kwargs):
+    if print_command:
+        print('$ {}'.format(list2cmdline(cmd)))
 
     try:
         error = subprocess.call(cmd)
@@ -198,7 +234,7 @@ def change_dir(dirname):
         yield
     finally:
         if not same:
-            print('cd {!r} from {!r}'.format(orig_dir, dirname))
+            print('cd {!r}  # from {!r}'.format(orig_dir, dirname))
             os.chdir(orig_dir)
 
 
