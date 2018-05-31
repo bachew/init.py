@@ -143,6 +143,8 @@ class main(object):
             name = "pypi"
             '''))
 
+        self.check_pipenv()
+
         # Running 'python -m pipenv install' creates virtualenv using the
         # same interpreter. But if the virtualenv already exists and it has
         # different python version, virtualenv won't be recreated
@@ -182,12 +184,15 @@ class main(object):
             status = self.pipenv(['run'] + self.command, raise_error=False)
             raise SystemExit(status)
 
-    def pipenv(self, args, **kwargs):
+    def check_pipenv(self):
         try:
             import pipenv  # noqa
         except ImportError:
             raise InitError('pipenv not installed')  # TODO: be helpful
 
+        # TODO: check pipenv version, similar to check_python_version()
+
+    def pipenv(self, args, **kwargs):
         return run([sys.executable, '-m', 'pipenv'] + args, **kwargs)
 
     def get_venv_py_version(self):
@@ -198,7 +203,7 @@ class main(object):
             'import sys; sys.stdout.write(str(sys.version))'
         ]
         output = subprocess.check_output(cmd)
-        return output.decode(sys.stdout.encoding)
+        return str(output.decode(sys.stdout.encoding))
 
 
 def print_error(message):
