@@ -11,6 +11,12 @@ import subprocess
 import sys
 
 
+try:
+    from urllib.request import urlopen  # noqa
+except ImportError:
+    from urllib2 import urlopen  # noqa
+
+
 class InitError(Exception):
     @classmethod
     def system_exit(cls, func):
@@ -28,8 +34,9 @@ class InitError(Exception):
 class Init(object):
     version = '0.0.1'
     help_url = 'https://github.com/bachew/init.py'
-    script_url = 'https://github.com/bachew/init.py/blob/master/init.py'
-    base_dir = osp.abspath(osp.dirname(__file__))
+    script_url = 'https://raw.githubusercontent.com/bachew/init.py/master/init.py'
+    script_path = osp.abspath(__file__)
+    base_dir = osp.dirname(script_path)
     config_path = osp.join(base_dir, 'init_config.py')
 
     @InitError.system_exit
@@ -51,6 +58,7 @@ class Init(object):
 
         if '--upgrade' in options:
             self.upgrade()
+            raise SystemExit
 
         changed_dir = False
 
@@ -92,11 +100,11 @@ class Init(object):
 
             Options:
               -h, --help  Show this help message and exit
-              --upgrade   Upgrade {init_py} to the latest version
-                          ({script_url})
+              --upgrade   Upgrade {script_path} to the latest version
+                          ({script_url}) and exit
         '''.format(version=self.version,
                    help_url=self.help_url,
-                   init_py=__file__,
+                   script_path=self.script_path,
                    script_url=self.script_url)
         print(dedent(details))
 
@@ -128,7 +136,17 @@ class Init(object):
         print('Python version OK')
 
     def upgrade(self):
-        print('TODO: upgrade {!r} from {!r}'.format(__file__, self.SCRIPT_URL))
+        print('Downloading {!r}'.format(self.script_url))
+
+        encoding = 'utf-8'
+
+        with urlopen(self.script_url) as f:
+            script = f.read().decode(encoding)
+
+        with open(self.script_path, 'wb') as f:
+            f.write(script.encode(encoding))
+
+        print('Upgraded {!r}'.format(self.script_path))
 
     def initialize(self):
         ensure_file('Pipfile', dedent('''\
@@ -251,6 +269,11 @@ def ensure_file(path, content):
 
     with open(path, 'w') as f:
         f.write(content)
+
+
+def read_url(url):
+    with urlopen(url) as f:
+        return f.read().decode('utf-8')
 
 
 if __name__ == '__main__':
