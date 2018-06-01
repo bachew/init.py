@@ -67,7 +67,7 @@ class Init(object):
             os.chdir(self.base_dir)
             changed_dir = True
 
-        # Have to to be in base dir for pipenv to work
+        # Have to be in base dir for pipenv to work
         self.initialize()
 
         if changed_dir:
@@ -139,12 +139,17 @@ class Init(object):
         print('Downloading {!r}'.format(self.script_url))
 
         encoding = 'utf-8'
+        fobj = urlopen(self.script_url)
 
-        with urlopen(self.script_url) as f:
-            script = f.read().decode(encoding)
+        try:
+            script = fobj.read().decode(encoding)
+        finally:
+            fobj.close()
 
-        with open(self.script_path, 'wb') as f:
-            f.write(script.encode(encoding))
+        block_size = 16 * 1024  # larger than init.py size to write in one go
+
+        with open(self.script_path, 'wb', buffering=block_size) as fobj:
+            fobj.write(script.encode(encoding))
 
         print('Upgraded {!r}'.format(self.script_path))
 
