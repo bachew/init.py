@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
-from contextlib import contextmanager
 from functools import wraps
 from os import path as osp
 from subprocess import list2cmdline
@@ -10,12 +9,6 @@ import os
 import runpy
 import subprocess
 import sys
-
-
-VERSION = '0.0.1'
-HELP_URL = 'https://github.com/bachew/init.py'
-SCRIPT_URL = 'https://github.com/bachew/init.py/blob/master/init.py'
-CONFIG_FILE = 'init_config.py'
 
 
 class InitError(Exception):
@@ -32,19 +25,13 @@ class InitError(Exception):
         return wrapper
 
 
-class CommandFailed(InitError):
-    def __init__(self, cmd, error):
-        msg = 'Command {!r} failed with error code {!r}'.format(list2cmdline(cmd), error)
-        super(CommandFailed, self).__init__(msg)
+class Init(object):
+    version = '0.0.1'
+    help_url = 'https://github.com/bachew/init.py'
+    script_url = 'https://github.com/bachew/init.py/blob/master/init.py'
+    base_dir = osp.abspath(osp.dirname(__file__))
+    config_path = osp.join(base_dir, 'init_config.py')
 
-
-class ProgramNotFound(InitError):
-    def __init__(self, cmd):
-        msg = 'Program {!r} not found, command: {}'.format(cmd[0], list2cmdline(cmd))
-        super(ProgramNotFound, self).__init__(msg)
-
-
-class main(object):
     @InitError.system_exit
     def __init__(self, argv):
         self.script = argv[0]
@@ -53,9 +40,6 @@ class main(object):
         if set(['-h', '--help']).intersection(options):
             self.print_help()
             raise SystemExit
-
-        self.base_dir = osp.abspath(osp.dirname(__file__))
-        self.config_path = osp.join(self.base_dir, 'init_config.py')
 
         ensure_file(self.config_path, dedent('''\
             def check_python_version(version):
@@ -68,8 +52,18 @@ class main(object):
         if '--upgrade' in options:
             self.upgrade()
 
-        with change_dir(self.base_dir):
-            self.initialize()
+        changed_dir = False
+
+        if not osp.samefile(self.base_dir, os.getcwd()):
+            print('cd {!r}'.format(self.base_dir))
+            os.chdir(self.base_dir)
+            changed_dir = True
+
+        # Have to to be in base dir for pipenv to work
+        self.initialize()
+
+        if changed_dir:
+            print('Note that working directory was {!r}'.format(self.base_dir))
 
     def split_args(self, args):
         i = 0
@@ -86,12 +80,12 @@ class main(object):
         self.print_usage()
 
         details = '''
-            init.py v{version} ({help_url})
+            init.py version {version} ({help_url})
 
             Initialize project by:
             - create or update virtualenv
             - run 'inv init'
-            - run the provided command
+            - run the provided command in virtualenv
 
             Arguments:
               command     Command to execute after initialization
@@ -100,10 +94,10 @@ class main(object):
               -h, --help  Show this help message and exit
               --upgrade   Upgrade {init_py} to the latest version
                           ({script_url})
-        '''.format(version=VERSION,
-                   help_url=HELP_URL,
+        '''.format(version=self.version,
+                   help_url=self.help_url,
                    init_py=__file__,
-                   script_url=SCRIPT_URL)
+                   script_url=self.script_url)
         print(dedent(details))
 
     def print_usage(self):
@@ -122,6 +116,7 @@ class main(object):
             print('Config {!r} not found, skip checking'.format(name))
             return
 
+        print('Checking Python version')
         version = sys.version_info
         print('>>> {}.{}({!r})'.format(self.config_module, key, version))
         ok = check(version)
@@ -153,13 +148,16 @@ class main(object):
         venv_py_version = self.get_venv_py_version()
 
         if venv_py_version != sys.version:
-            # TODO: more friendly message
-            print(('Recreating virtualenv because its Python version {!r}'
-                   ' is different from current Python version {!r}').format(
-                venv_py_version, sys.version))
+            msg = dedent('''\
+                Updating virtualenv Python version from:
+                {}
+
+                To:
+                {}
+                ''').format(venv_py_version, sys.version)
+            print(msg)
             # Providing --python option forces virtualenv to be recreated
-            self.pipenv(['--python', sys.executable, 'run', 'python', '-c', ''],
-                        print_command=False)
+            self.pipenv(['--python', sys.executable, 'run', 'python', '-c', '# update virtualenv Python version'])
 
         self.pipenv(['install', 'invoke>=1.0.0'])
 
@@ -187,8 +185,14 @@ class main(object):
     def check_pipenv(self):
         try:
             import pipenv  # noqa
-        except ImportError:
-            raise InitError('pipenv not installed')  # TODO: be helpful
+        except ImportError as e:
+            msg = dedent('''\
+                {error}
+                You can install pipenv module by running:
+                  sudo {python} -m pip install pipenv\
+            ''').format(error=e,
+                        python=sys.executable)
+            raise InitError(msg)
 
         # TODO: check pipenv version, similar to check_python_version()
 
@@ -206,13 +210,24 @@ class main(object):
         return str(output.decode(sys.stdout.encoding))
 
 
+class CommandFailed(InitError):
+    def __init__(self, cmd, error):
+        msg = 'Command {!r} failed with error code {!r}'.format(list2cmdline(cmd), error)
+        super(CommandFailed, self).__init__(msg)
+
+
+class ProgramNotFound(InitError):
+    def __init__(self, cmd):
+        msg = 'Program {!r} not found, command: {}'.format(cmd[0], list2cmdline(cmd))
+        super(ProgramNotFound, self).__init__(msg)
+
+
 def print_error(message):
     print('ERROR:', message, file=sys.stderr)
 
 
-def run(cmd, print_command=True, raise_error=True, **kwargs):
-    if print_command:
-        print('$ {}'.format(list2cmdline(cmd)))
+def run(cmd, raise_error=True, **kwargs):
+    print('$ {}'.format(list2cmdline(cmd)))
 
     try:
         error = subprocess.call(cmd)
@@ -226,24 +241,9 @@ def run(cmd, print_command=True, raise_error=True, **kwargs):
         raise CommandFailed(cmd, error)
 
 
-@contextmanager
-def change_dir(dirname):
-    orig_dir = os.getcwd()
-    same = osp.samefile(dirname, orig_dir)
-
-    if not same:
-        print('cd {!r}'.format(dirname))
-        os.chdir(dirname)
-
-    try:
-        yield
-    finally:
-        if not same:
-            print('cd {!r}  # from {!r}'.format(orig_dir, dirname))
-            os.chdir(orig_dir)
-
-
 def ensure_file(path, content):
+    path = osp.abspath(path)
+
     if osp.isfile(path):
         return
 
@@ -254,4 +254,4 @@ def ensure_file(path, content):
 
 
 if __name__ == '__main__':
-    main(sys.argv)
+    Init(sys.argv)
