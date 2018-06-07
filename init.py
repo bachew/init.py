@@ -50,7 +50,11 @@ class Init(object):
 
         ensure_file(self.config_path, dedent('''\
             def check_python_version(version):
-                return version >= (2, 7)
+                v = version[:2]
+                ok = v == (2, 7) or v >= (3, 4)
+
+                if not ok:
+                    raise ValueError('requires either 2.7 or >=3.4')
             '''))
         self.config = runpy.run_path(self.config_path)
 
@@ -127,13 +131,11 @@ class Init(object):
         print('Checking Python version')
         version = sys.version_info
         print('>>> {}.{}({!r})'.format(self.config_module, key, version))
-        ok = check(version)
-        print('>>> {!r}'.format(ok))
-
-        if not ok:
-            raise InitError('Python version not OK, see {!r}'.format(self.config_path))
-
-        print('Python version OK')
+        try:
+            check(version)
+        except ValueError as e:
+            version_str = sys.version.splitlines()[0].strip()
+            raise InitError('Invalid Python version {}: {}'.format(version_str, e))
 
     def upgrade(self):
         print('Downloading {!r}'.format(self.script_url))
