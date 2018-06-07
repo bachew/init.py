@@ -32,7 +32,7 @@ class InitError(Exception):
 
 
 class Init(object):
-    version = '0.0.1'
+    version = '0.0.2'
     help_url = 'https://github.com/bachew/init.py'
     script_url = 'https://raw.githubusercontent.com/bachew/init.py/master/init.py'
     script_path = osp.abspath(__file__)
@@ -146,7 +146,8 @@ class Init(object):
         finally:
             fobj.close()
 
-        block_size = 16 * 1024  # larger than init.py size to write in one go
+        # Write in one go
+        block_size = os.stat(__file__).st_size * 2
 
         with open(self.script_path, 'wb', buffering=block_size) as fobj:
             fobj.write(script.encode(encoding))
@@ -207,24 +208,15 @@ class Init(object):
 
     def check_pipenv(self):
         try:
-            import pipenv  # noqa
-        except ImportError as e:
-            msg = dedent('''\
-                {error}
-                You can install pipenv module by running:
-                  sudo {python} -m pip install pipenv\
-            ''').format(error=e,
-                        python=sys.executable)
-            raise InitError(msg)
-
-        # TODO: check pipenv version, similar to check_python_version()
+            self.pipenv(['--version'])
+        except ProgramNotFound as e:
+            raise InitError('{}\nTo install pipenv, see https://docs.pipenv.org'.format(e))
 
     def pipenv(self, args, **kwargs):
-        return run([sys.executable, '-m', 'pipenv'] + args, **kwargs)
+        return run(['pipenv'] + args, **kwargs)
 
     def get_venv_py_version(self):
         cmd = [
-            sys.executable, '-m',
             'pipenv', 'run',
             'python', '-c',
             'import sys; sys.stdout.write(str(sys.version))'
@@ -241,7 +233,7 @@ class CommandFailed(InitError):
 
 class ProgramNotFound(InitError):
     def __init__(self, cmd):
-        msg = 'Program {!r} not found, command: {}'.format(cmd[0], list2cmdline(cmd))
+        msg = 'Program {!r} not found in command {!r}'.format(cmd[0], list2cmdline(cmd))
         super(ProgramNotFound, self).__init__(msg)
 
 
