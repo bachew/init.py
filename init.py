@@ -75,8 +75,15 @@ class Init(object):
         except ProgramNotFound as e:
             raise InitError('{}\nTo install pipenv, see https://docs.pipenv.org'.format(e))
 
-        if has_flag('--clean'):
-            self.remove_venv()
+        try:
+            self.venv_dir = self.check_output(['pipenv', '--venv'])
+        except CalledProcessError:
+            self.venv_dir = None  # not yet created
+
+        if has_flag('--clean') and self.venv_dir:
+            print('Removing virtualenv {!r}'.format(self.venv_dir))
+            shutil.rmtree(self.venv_dir)
+            self.venv_dir = None
 
         change_dir = False
 
@@ -145,7 +152,7 @@ class Init(object):
             return
 
         print('Checking Python version')
-        version = sys.version_info
+        version = tuple(sys.version_info)
         print('>>> {}.{}({!r})'.format(self.config_module, key, version))
         try:
             check(version)
@@ -172,15 +179,6 @@ class Init(object):
 
         print('Upgraded {!r}'.format(self.script_path))
 
-    def remove_venv(self):
-        try:
-            path = self.check_output(['pipenv', '--venv'])
-        except CalledProcessError:
-            pass  # virtualenv not created
-        else:
-            print('Removing virtualenv {!r}'.format(path))
-            shutil.rmtree(path)
-
     def check_output(self, cmd):
         output = subprocess.check_output(cmd)
         return str(output.decode(sys.stdout.encoding)).strip()
@@ -193,28 +191,25 @@ class Init(object):
             name = "pypi"
             '''))
 
-        # Running 'python -m pipenv install' creates virtualenv using the
-        # same interpreter. But if the virtualenv already exists and it has
-        # different python version, virtualenv won't be recreated
-        self.pipenv(['install'])
+        recreate = True
 
-        venv_py_version = self.check_output([
-            'pipenv', 'run',
-            'python', '-c',
-            'import sys; sys.stdout.write(str(sys.version))'
-        ])
+        if self.venv_dir:
+            venv_py_version = self.check_output([
+                'pipenv', 'run',
+                'python', '-c',
+                'import sys; sys.stdout.write(str(sys.version))'
+            ])
 
-        if venv_py_version != sys.version:
-            msg = dedent('''\
-                Changing virtualenv Python version from:
-                {}
+            if venv_py_version == sys.version:
+                recreate = False
+            else:
+                print('Changing virtualenv Python version from {!r} to {!r}'.format(venv_py_version, sys.version))
 
-                To:
-                {}
-                ''').format(venv_py_version, sys.version)
-            print(msg)
-            # Providing --python option forces virtualenv to be recreated
-            self.pipenv(['--python', sys.executable, 'run', 'python', '-c', '# update virtualenv Python version'])
+        if recreate:
+            # --python option forces virtualenv to be recreated
+            self.pipenv(['--python', sys.executable, 'install'])
+        else:
+            self.pipenv(['install'])
 
         ensure_file('invoke.py', dedent('''\
             debug = True
@@ -238,7 +233,6 @@ class Init(object):
             raise SystemExit(status)
 
     def pipenv(self, args, **kwargs):
-        # TODO: pass two or three depending on sys.version_info.major
         return run(['pipenv'] + args, **kwargs)
 
 
