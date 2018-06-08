@@ -2,11 +2,12 @@
 from __future__ import print_function
 from functools import wraps
 from os import path as osp
-from subprocess import list2cmdline
+from subprocess import CalledProcessError, list2cmdline
 from textwrap import dedent
 import errno
 import os
 import runpy
+import shutil
 import subprocess
 import sys
 
@@ -32,10 +33,11 @@ class InitError(Exception):
 
 
 class Init(object):
-    version = '0.0.2'
+    version = '0.0.3'
     help_url = 'https://github.com/bachew/init.py'
     script_url = 'https://raw.githubusercontent.com/bachew/init.py/master/init.py'
     script_path = osp.abspath(__file__)
+    script_basename = osp.basename(script_path)
     base_dir = osp.dirname(script_path)
     config_path = osp.join(base_dir, 'init_config.py')
 
@@ -44,38 +46,50 @@ class Init(object):
         self.script = argv[0]
         options, self.command = self.split_args(argv[1:])
 
-        if set(['-h', '--help']).intersection(options):
+        def has_flag(*flags):
+            return bool(set(flags).intersection(options))
+
+        if has_flag('-h', '--help'):
             self.print_help()
+            raise SystemExit
+
+        if has_flag('-v', '--version'):
+            print('{} version {}'.format(self.script_basename, self.version))
             raise SystemExit
 
         ensure_file(self.config_path, dedent('''\
             def check_python_version(version):
-                v = version[:2]
-                ok = v == (2, 7) or v >= (3, 4)
-
-                if not ok:
+                if version[:2] != (2, 7) and version < (3, 4):
                     raise ValueError('requires either 2.7 or >=3.4')
             '''))
         self.config = runpy.run_path(self.config_path)
 
         self.check_python_version()
 
-        if '--upgrade' in options:
+        if has_flag('--upgrade'):
             self.upgrade()
             raise SystemExit
 
-        changed_dir = False
+        try:
+            self.pipenv(['--version'])
+        except ProgramNotFound as e:
+            raise InitError('{}\nTo install pipenv, see https://docs.pipenv.org'.format(e))
+
+        if has_flag('--clean'):
+            self.remove_venv()
+
+        change_dir = False
 
         if not osp.samefile(self.base_dir, os.getcwd()):
             print('cd {!r}'.format(self.base_dir))
             os.chdir(self.base_dir)
-            changed_dir = True
+            change_dir = True
 
         # Have to be in base dir for pipenv to work
         self.initialize()
 
-        if changed_dir:
-            print('Note that working directory was {!r}'.format(self.base_dir))
+        if change_dir:
+            print('Please note that working directory was {!r}'.format(self.base_dir))
 
     def split_args(self, args):
         i = 0
@@ -92,23 +106,25 @@ class Init(object):
         self.print_usage()
 
         details = '''
-            init.py version {version} ({help_url})
-
-            Initialize project by:
-            - create or update virtualenv
+            Initialize directory {base_dir!r} by:
+            - create or update virtualenv using pipenv
             - run 'inv init'
-            - run the provided command in virtualenv
+            - and run the command in virtualenv
+
+            For more info, see {help_url}
 
             Arguments:
-              command     Command to execute after initialization
+              command     Command to execute in virtualenv
 
             Options:
-              -h, --help  Show this help message and exit
-              --upgrade   Upgrade {script_path} to the latest version
-                          ({script_url}) and exit
-        '''.format(version=self.version,
+              -v, --version  Show version and exit
+              -h, --help     Show this help message and exit
+              --upgrade      Upgrade {script} and exit, source URL:
+                             {script_url}
+              --clean        Remove virtualenv before creating it
+        '''.format(base_dir=self.base_dir,
                    help_url=self.help_url,
-                   script_path=self.script_path,
+                   script=self.script_basename,
                    script_url=self.script_url)
         print(dedent(details))
 
@@ -134,8 +150,8 @@ class Init(object):
         try:
             check(version)
         except ValueError as e:
-            version_str = sys.version.splitlines()[0].strip()
-            raise InitError('Invalid Python version {}: {}'.format(version_str, e))
+            version_str = '.'.join([str(v) for v in sys.version_info])
+            raise InitError('Unsupported Python version {}: {}'.format(version_str, e))
 
     def upgrade(self):
         print('Downloading {!r}'.format(self.script_url))
@@ -156,6 +172,19 @@ class Init(object):
 
         print('Upgraded {!r}'.format(self.script_path))
 
+    def remove_venv(self):
+        try:
+            path = self.check_output(['pipenv', '--venv'])
+        except CalledProcessError:
+            pass  # virtualenv not created
+        else:
+            print('Removing virtualenv {!r}'.format(path))
+            shutil.rmtree(path)
+
+    def check_output(self, cmd):
+        output = subprocess.check_output(cmd)
+        return str(output.decode(sys.stdout.encoding)).strip()
+
     def initialize(self):
         ensure_file('Pipfile', dedent('''\
             [[source]]
@@ -164,18 +193,20 @@ class Init(object):
             name = "pypi"
             '''))
 
-        self.check_pipenv()
-
         # Running 'python -m pipenv install' creates virtualenv using the
         # same interpreter. But if the virtualenv already exists and it has
         # different python version, virtualenv won't be recreated
         self.pipenv(['install'])
 
-        venv_py_version = self.get_venv_py_version()
+        venv_py_version = self.check_output([
+            'pipenv', 'run',
+            'python', '-c',
+            'import sys; sys.stdout.write(str(sys.version))'
+        ])
 
         if venv_py_version != sys.version:
             msg = dedent('''\
-                Updating virtualenv Python version from:
+                Changing virtualenv Python version from:
                 {}
 
                 To:
@@ -184,8 +215,6 @@ class Init(object):
             print(msg)
             # Providing --python option forces virtualenv to be recreated
             self.pipenv(['--python', sys.executable, 'run', 'python', '-c', '# update virtualenv Python version'])
-
-        self.pipenv(['install', 'invoke>=1.0.0'])
 
         ensure_file('invoke.py', dedent('''\
             debug = True
@@ -201,30 +230,16 @@ class Init(object):
             def init(ctx):
                 ctx.run('echo tasks.py says hi')
             '''))
-
+        self.pipenv(['install', 'invoke>=1.0.0'])
         self.pipenv(['run', 'inv', 'init'])
 
         if self.command:
             status = self.pipenv(['run'] + self.command, raise_error=False)
             raise SystemExit(status)
 
-    def check_pipenv(self):
-        try:
-            self.pipenv(['--version'])
-        except ProgramNotFound as e:
-            raise InitError('{}\nTo install pipenv, see https://docs.pipenv.org'.format(e))
-
     def pipenv(self, args, **kwargs):
+        # TODO: pass two or three depending on sys.version_info.major
         return run(['pipenv'] + args, **kwargs)
-
-    def get_venv_py_version(self):
-        cmd = [
-            'pipenv', 'run',
-            'python', '-c',
-            'import sys; sys.stdout.write(str(sys.version))'
-        ]
-        output = subprocess.check_output(cmd)
-        return str(output.decode(sys.stdout.encoding))
 
 
 class CommandFailed(InitError):
