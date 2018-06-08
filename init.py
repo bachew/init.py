@@ -136,7 +136,7 @@ class Init(object):
         print(dedent(details))
 
     def print_usage(self):
-        print('Usage: {} [-h/--help] [--upgrade] [command]'.format(self.script))
+        print('Usage: {} [-v/--version] [-h/--help] [--upgrade] [--clean] [command]'.format(self.script))
 
     @property
     def config_module(self):
