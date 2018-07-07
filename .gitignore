@@ -6,5 +6,6 @@ __pycache__
 /Pipfile.lock
 /invoke.py
 /tasks.py
+/tasks
 
 /*.sublime-*

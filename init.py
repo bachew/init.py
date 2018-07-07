@@ -33,7 +33,7 @@ class InitError(Exception):
 
 
 class Init(object):
-    version = '0.0.3'
+    version = '0.0.4'
     help_url = 'https://github.com/bachew/init.py'
     script_url = 'https://raw.githubusercontent.com/bachew/init.py/master/init.py'
     script_path = osp.abspath(__file__)
@@ -218,7 +218,7 @@ class Init(object):
                 'pty': True,
             }
             '''))
-        ensure_file('tasks.py', dedent('''\
+        ensure_file('tasks/__init__.py', dedent('''\
             from invoke import task
 
             @task
@@ -275,13 +275,14 @@ def ensure_file(path, content):
 
     print('File {!r} does not exist, creating it'.format(path))
 
+    try:
+        os.makedirs(osp.dirname(path))
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+
     with open(path, 'w') as f:
         f.write(content)
-
-
-def read_url(url):
-    with urlopen(url) as f:
-        return f.read().decode('utf-8')
 
 
 if __name__ == '__main__':
