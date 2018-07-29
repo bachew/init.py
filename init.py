@@ -33,7 +33,7 @@ class InitError(Exception):
 
 
 class Init(object):
-    version = '0.0.4'
+    version = '0.0.5'
     help_url = 'https://github.com/bachew/init.py'
     script_url = 'https://raw.githubusercontent.com/bachew/init.py/master/init.py'
     script_path = osp.abspath(__file__)
@@ -76,14 +76,16 @@ class Init(object):
             raise InitError('{}\nTo install pipenv, see https://docs.pipenv.org'.format(e))
 
         try:
-            self.venv_dir = self.check_output(['pipenv', '--venv'])
+            venv_dir = self.check_output(['pipenv', '--venv'])
         except CalledProcessError:
-            self.venv_dir = None  # not yet created
+            venv_dir = None  # not yet created
 
-        if has_flag('--clean') and self.venv_dir:
-            print('Removing virtualenv {!r}'.format(self.venv_dir))
-            shutil.rmtree(self.venv_dir)
-            self.venv_dir = None
+        if has_flag('--clean') and venv_dir:
+            print('Removing virtualenv {!r}'.format(venv_dir))
+            shutil.rmtree(venv_dir)
+            venv_dir = None
+
+        self.fresh_venv = venv_dir is None
 
         change_dir = False
 
@@ -191,25 +193,30 @@ class Init(object):
             name = "pypi"
             '''))
 
-        recreate = True
+        recreate = False
 
-        if self.venv_dir:
+        if self.fresh_venv:
+            recreate = True
+        else:
             venv_py_version = self.check_output([
                 'pipenv', 'run',
                 'python', '-c',
                 'import sys; sys.stdout.write(str(sys.version))'
             ])
+            same_py_versions = venv_py_version == sys.version
 
-            if venv_py_version == sys.version:
-                recreate = False
-            else:
+            if not same_py_versions:
                 print('Changing virtualenv Python version from {!r} to {!r}'.format(venv_py_version, sys.version))
+
+            recreate = not same_py_versions
 
         if recreate:
             # --python option forces virtualenv to be recreated
-            self.pipenv(['--python', sys.executable, 'install'])
-        else:
-            self.pipenv(['install'])
+            self.pipenv(['--python', sys.executable, 'run', 'python', '--version'])
+            # Pipenv doesn't upgrade pip automatically
+            self.pipenv(['run', 'pip', 'install', '-U', 'pip'])
+
+        self.pipenv(['install'])
 
         ensure_file('invoke.py', dedent('''\
             debug = True
@@ -221,6 +228,7 @@ class Init(object):
         ensure_file('tasks/__init__.py', dedent('''\
             from invoke import task
 
+
             @task
             def init(ctx):
                 ctx.run('echo tasks.py says hi')
@@ -231,6 +239,9 @@ class Init(object):
         if self.command:
             status = self.pipenv(['run'] + self.command, raise_error=False)
             raise SystemExit(status)
+
+    def upgrade_pip(self):
+        self.pipenv(['run', 'pip', 'install', '-U', 'pip'])
 
     def pipenv(self, args, **kwargs):
         return run(['pipenv'] + args, **kwargs)
