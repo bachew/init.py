@@ -54,7 +54,7 @@ $ pipenv run inv init
 
 But it's easier to work within activated virtualenv because you often need to run many commands:
 
-```console
+```
 $ pipenv shell
 (venv-u0VWRkUS)$ inv -l
 Available tasks:
@@ -74,7 +74,7 @@ Right now there's only one config item, which is `check_python_version()`, it's 
 
 ```python
 def check_python_version(version):
-    if and version < (3, 4):
+    if version < (3, 4):
         raise ValueError('requires >=3.4')
 ```
 
