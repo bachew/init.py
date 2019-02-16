@@ -33,7 +33,7 @@ class InitError(Exception):
 
 
 class Init(object):
-    version = '0.0.5'
+    version = '0.0.6'
     help_url = 'https://github.com/bachew/init.py'
     script_url = 'https://raw.githubusercontent.com/bachew/init.py/master/init.py'
     script_path = osp.abspath(__file__)
@@ -225,13 +225,19 @@ class Init(object):
                 'pty': True,
             }
             '''))
-        ensure_file('tasks/__init__.py', dedent('''\
+
+        tasks_init_path = osp.join('tasks', '__init__.py')
+        tasks_path = tasks_init_path if osp.isfile(tasks_init_path) else 'tasks.py'
+
+        ensure_file(tasks_path, dedent('''\
             from invoke import task
 
 
             @task
             def init(ctx):
-                ctx.run('echo tasks.py says hi')
+                # This is called when you run 'python init.py', ideal for installing system packages
+                # ctx.run('sudo apt install python-dev')
+                pass
             '''))
         self.pipenv(['install', 'invoke>=1.0.0'])
         self.pipenv(['run', 'inv', 'init'])
