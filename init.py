@@ -33,7 +33,7 @@ class InitError(Exception):
 
 
 class Init(object):
-    version = '0.0.6'
+    version = '0.0.7'
     help_url = 'https://github.com/bachew/init.py'
     script_url = 'https://raw.githubusercontent.com/bachew/init.py/master/init.py'
     script_path = osp.abspath(__file__)
@@ -218,13 +218,13 @@ class Init(object):
 
         self.pipenv(['install'])
 
-        ensure_file('invoke.py', dedent('''\
-            debug = True
-            run = {
-                'echo': True,
-                'pty': True,
-            }
-            '''))
+        if not osp.exists('invoke.py') and not osp.exists('invoke.yaml'):
+            ensure_file('invoke.yaml', dedent('''\
+                debug: true
+                run:
+                    echo: true
+                    pty: true
+                '''))
 
         tasks_init_path = osp.join('tasks', '__init__.py')
         tasks_path = tasks_init_path if osp.isfile(tasks_init_path) else 'tasks.py'
