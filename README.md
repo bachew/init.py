@@ -3,6 +3,9 @@
 Initialize a Python project for development.
 
 
+## *This project is not longer maintained*
+
+
 ## Getting started
 
 Download `init.py`:
